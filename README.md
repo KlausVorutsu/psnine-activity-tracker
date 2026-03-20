@@ -7,6 +7,10 @@ A customized Tampermonkey user script designed for [PSNINE](https://psnine.com/)
 
 这是一个为 [PSNINE](https://psnine.com/) 定制的 Tampermonkey 用户脚本。**脚本会在 PSNINE 的用户个人主页（例如：`https://www.psnine.com/psnid/{user_id}`）被自动激活。** 通过自动化抓取百度搜索的结果，一键挖掘并追踪指定 PSN ID 在 P9 的历史活动足迹（包括社区讨论、奖杯 Tip、测评评分等）。
 
+## 📸 Screenshots / 运行截图
+
+![UI Preview](asset/ui-preview-v2.png)
+
 ## ✨ Features & Tech Specs / 核心功能与技术特性
 
 * **🤖 Unattended AutoPilot Fetching:** Bypasses conventional pagination limits, automatically climbing and cross-page fetching until the physical limit is reached.
