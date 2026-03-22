@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PSNINE Activity Tracker (via Baidu) - AutoPilot
 // @namespace    http://tampermonkey.net/
-// @version      2.16.5-AutoPilot
-// @description  修复 Issue 3：增加 CSS 强制换行属性 (word-break: break-all)，彻底解决超长连续英文字符撑破面板导致横向滚动条的问题
+// @version      2.16.6-AutoPilot
+// @description  修复 Issue 2：URL注入强校验根治新标签页模式下的异步掉线问题，并清理测试期冗余的[监控]日志
 // @author       Gemini Pro
 // @match        https://www.psnine.com/psnid/*
 // @match        https://www.baidu.com/s?*
@@ -36,7 +36,10 @@
             let results = [];
             let rawSummary = [];
 
-            const isAutoPilot = GM_getValue("psn_tracker_status") === "running";
+            // 💡 核心修复 Issue 2: 引入 initialParams.get('autopilot') === 'true' 的硬校验，
+            // 彻底解决跨标签页 GM_setValue 几毫秒延迟导致的“误入手动模式”的 Race Condition。
+            const isAutoPilot = GM_getValue("psn_tracker_status") === "running" || initialParams.get('autopilot') === 'true';
+            
             const maxPages = GM_getValue("psn_max_pages", 30);
             const currentPageNum = Math.floor(parseInt(currentPN) / 10) + 1;
             let actionLog = "";
@@ -128,9 +131,8 @@
                     GM_setValue("psn_tracker_status", "stopped");
                     if (!isDebug) setTimeout(() => window.close(), 600);
                 }
-            } else {
-                actionLog = `[监控] 手动模式。`;
             }
+            // 💡 剥离了 else { actionLog = "[监控] 手动模式。"; } 保持非自动模式的绝对静默
 
             GM_setValue("psn_bridge_data", JSON.stringify({
                 data: results, rawCount: containers.length, rawSummary: rawSummary, pn: currentPN, action: actionLog, currentUrl: window.location.href, nextUrl: nextTargetUrl, ts: Date.now(), token: Math.random()
@@ -176,7 +178,11 @@
             // 这是排查爬虫动作轨迹、URL跳转分析以及底层数据质量的生命线！
             // =========================================================================
             console.group(`[PSN-Tracker] PN: ${packet.pn} 数据与动作`);
-            console.log(`%c[百度端决策]: ${packet.action}`, "color: #1976d2; font-size: 13px; font-weight: bold; background: #e3f2fd; padding: 2px 5px;");
+            
+            // 💡 只有在 actionLog 有内容（真正执行决策）时才打印，去掉无意义的手动模式日志
+            if (packet.action) {
+                console.log(`%c[百度端决策]: ${packet.action}`, "color: #1976d2; font-size: 13px; font-weight: bold; background: #e3f2fd; padding: 2px 5px;");
+            }
 
             console.log(`🔗 当前页面 URL:`, packet.currentUrl);
             if (packet.nextUrl && packet.nextUrl !== "无") console.log(`➡️ 下一页目标 URL:`, packet.nextUrl);
@@ -378,7 +384,12 @@
         GM_setValue("psn_debug_mode", !autoClose);
         const openMode = document.querySelector('input[name="open-mode"]:checked').value;
         const wd = encodeURIComponent(`site:psnine.com "${userId}"`);
-        const url = `https://www.baidu.com/s?wd=${wd}&pn=${pn}&oq=${wd}&ie=utf-8&fenlei=256&rsv_idx=1`;
+        
+        // 💡 核心修复 Issue 2: 在生成的 URL 中强行挂载 &autopilot=true，让百度页无视 GM_setValue 延迟
+        let url = `https://www.baidu.com/s?wd=${wd}&pn=${pn}&oq=${wd}&ie=utf-8&fenlei=256&rsv_idx=1`;
+        if (isAutoStart) {
+            url += "&autopilot=true"; 
+        }
 
         if (isAutoStart) {
             GM_setValue("psn_max_pages", parseInt(document.getElementById('max-p-input').value) || 30);
