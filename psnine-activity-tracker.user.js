@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PSNINE Activity Tracker (via Baidu) - AutoPilot
 // @namespace    http://tampermonkey.net/
-// @version      2.16.4-AutoPilot
-// @description  实施 Strict Mode：收紧测评评分的分类逻辑，杜绝“游戏测评”关键词导致的误杀
+// @version      2.16.5-AutoPilot
+// @description  修复 Issue 3：增加 CSS 强制换行属性 (word-break: break-all)，彻底解决超长连续英文字符撑破面板导致横向滚动条的问题
 // @author       Gemini Pro
 // @match        https://www.psnine.com/psnid/*
 // @match        https://www.baidu.com/s?*
@@ -81,7 +81,6 @@
                                 category = '排行榜';
                             } else if (cleanTitle.includes('奖杯 -') || cleanTitle.includes('奖杯-')) {
                                 category = '奖杯Tip';
-                            // 💡 核心修复：Strict Mode 严格匹配书名号结尾的“》测评评分”，删除了泛滥的“游戏测评”
                             } else if (cleanTitle.includes('》测评评分')) {
                                 category = '测评评分';
                             } else if (preview.includes('参与的讨论:')) {
@@ -363,7 +362,7 @@
                     ${badgeHtml}
                     <a href="${r.href}" target="_blank" style="color:#d1d5da; font-weight:bold; text-decoration:none; word-break:break-all; transition:0.2s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#d1d5da'">${r.title}</a>
                 </div>
-                <div style="font-size:12px; color:#8b949e; margin-top:6px; line-height:1.5; background:#252a32; padding:8px; border-left:3px solid ${badge.color}; border-radius:0 3px 3px 0;">${highlightedPreview}</div>
+                <div style="font-size:12px; color:#8b949e; margin-top:6px; line-height:1.5; background:#252a32; padding:8px; border-left:3px solid ${badge.color}; border-radius:0 3px 3px 0; word-wrap:break-word; word-break:break-all;">${highlightedPreview}</div>
             </div>
             `;
         }).join('');
