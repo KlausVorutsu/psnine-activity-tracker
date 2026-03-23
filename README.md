@@ -9,7 +9,7 @@ A customized Tampermonkey user script designed for [PSNINE](https://psnine.com/)
 
 ## 📸 Screenshots / 运行截图
 
-<img src="asset/ui-preview-en.png" alt="UI Preview"><img src="asset/ui-preview-v2.png" alt="UI Preview">
+<img src="asset/ui-preview-en.png" alt="UI Preview"><img src="asset/ui-preview-v3.png" alt="UI Preview">
 
 ## ✨ Features & Tech Specs / 核心功能与技术特性
 
