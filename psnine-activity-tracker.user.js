@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         PSNINE Activity Tracker (via Baidu) - AutoPilot
 // @namespace    http://tampermonkey.net/
-// @version      2.16.6-AutoPilot
-// @description  修复 Issue 2：URL注入强校验根治新标签页模式下的异步掉线问题，并清理测试期冗余的[监控]日志
-// @author       Gemini Pro
+// @version      2.17.1-AutoPilot
+// @description  修复 DOM 加载顺序导致的 null 报错，实现双语无缝切换，并保持所有底线逻辑
+// @author       KlausVorutsu
 // @match        https://www.psnine.com/psnid/*
 // @match        https://www.baidu.com/s?*
 // @connect      baidu.com
@@ -18,6 +18,71 @@
     'use strict';
 
     const log = (msg, data = "") => console.log(`[PSN-Tracker] ${msg}`, data);
+
+    // ==========================================
+    // 0. i18n 国际化词典配置
+    // ==========================================
+    const i18nDict = {
+        zh: {
+            navBtn: "足迹",
+            maxPages: "最大抓取(页):",
+            ready: "就绪",
+            antiSleep: "💡 防休眠策略：",
+            popupMode: "独立迷你窗口运行",
+            popupTipTitle: "抓取时新窗口会自动弹出。您可以将其移至屏幕边缘，但请绝对不要关闭它，否则抓取会立刻中断！",
+            popupTip: "(弹窗可移开，请勿关闭) ℹ️",
+            tabMode: "传统新标签页打开",
+            tabTipTitle: "由于现代浏览器的内存节省和后台休眠机制，非当前焦点标签页的请求会被挂起。如果您发现抓取进度卡住，请手动点击进入该百度标签页以唤醒脚本。",
+            tabTip: "(受休眠限制，卡住需手动唤醒) ℹ️",
+            autoClose: "抓取后自动关闭百度",
+            noteHeader: "ℹ️ 注意：",
+            noteBody: "抓取结果取决于百度引擎实际收录量，未必包含全部历史足迹。",
+            searchPlaceholder: "🔍 实时过滤结果...",
+            startBtn: "🚀 开始自动抓取",
+            runningBtn: "自动抓取中...",
+            stopBtn: "强制停止",
+            loaded: "已载入: {num} 条",
+            cat1: "💬 社区讨论",
+            cat2: "🏆 奖杯Tip",
+            cat3: "📝 测评评分",
+            cat4: "👻 其他参与",
+            cat5: "📊 排行榜"
+        },
+        en: {
+            navBtn: "Tracker",
+            maxPages: "Max Pages:",
+            ready: "Ready",
+            antiSleep: "💡 Anti-Sleep Strategy:",
+            popupMode: "Popup Window Mode",
+            popupTipTitle: "A new window will pop up. You can move it to the edge, but absolutely DO NOT close it, or tracking will abort!",
+            popupTip: "(Can be moved, DO NOT close) ℹ️",
+            tabMode: "Background Tab Mode",
+            tabTipTitle: "Due to modern browser memory saving mechanisms, background tabs might be suspended. If tracking stalls, click the Baidu tab to wake it up.",
+            tabTip: "(Subject to sleep limits, click tab to wake) ℹ️",
+            autoClose: "Auto-close Baidu when finished",
+            noteHeader: "ℹ️ Note: ",
+            noteBody: "Results depend on Baidu's actual index and may not include all history.",
+            searchPlaceholder: "🔍 Filter results in real-time...",
+            startBtn: "🚀 Start Auto-Tracker",
+            runningBtn: "Tracking...",
+            stopBtn: "Force Stop",
+            loaded: "Loaded: {num} items",
+            cat1: "💬 Discussion",
+            cat2: "🏆 Trophy Tip",
+            cat3: "📝 Review/Score",
+            cat4: "👻 Other",
+            cat5: "📊 Leaderboard"
+        }
+    };
+
+    let currentLang = GM_getValue("psn_lang", "zh");
+    const t = (key, params = {}) => {
+        let text = i18nDict[currentLang][key] || key;
+        for (const [k, v] of Object.entries(params)) {
+            text = text.replace(`{${k}}`, v);
+        }
+        return text;
+    };
 
     // ==========================================
     // 1. 百度搜索页逻辑 (后台引擎，完全动态化)
@@ -36,10 +101,7 @@
             let results = [];
             let rawSummary = [];
 
-            // 💡 核心修复 Issue 2: 引入 initialParams.get('autopilot') === 'true' 的硬校验，
-            // 彻底解决跨标签页 GM_setValue 几毫秒延迟导致的“误入手动模式”的 Race Condition。
             const isAutoPilot = GM_getValue("psn_tracker_status") === "running" || initialParams.get('autopilot') === 'true';
-            
             const maxPages = GM_getValue("psn_max_pages", 30);
             const currentPageNum = Math.floor(parseInt(currentPN) / 10) + 1;
             let actionLog = "";
@@ -132,7 +194,6 @@
                     if (!isDebug) setTimeout(() => window.close(), 600);
                 }
             }
-            // 💡 剥离了 else { actionLog = "[监控] 手动模式。"; } 保持非自动模式的绝对静默
 
             GM_setValue("psn_bridge_data", JSON.stringify({
                 data: results, rawCount: containers.length, rawSummary: rawSummary, pn: currentPN, action: actionLog, currentUrl: window.location.href, nextUrl: nextTargetUrl, ts: Date.now(), token: Math.random()
@@ -175,11 +236,8 @@
 
             // =========================================================================
             // [核心警告] 绝对不要删除以下整个 console.group 块！
-            // 这是排查爬虫动作轨迹、URL跳转分析以及底层数据质量的生命线！
             // =========================================================================
             console.group(`[PSN-Tracker] PN: ${packet.pn} 数据与动作`);
-            
-            // 💡 只有在 actionLog 有内容（真正执行决策）时才打印，去掉无意义的手动模式日志
             if (packet.action) {
                 console.log(`%c[百度端决策]: ${packet.action}`, "color: #1976d2; font-size: 13px; font-weight: bold; background: #e3f2fd; padding: 2px 5px;");
             }
@@ -201,7 +259,7 @@
 
     GM_addValueChangeListener("psn_tracker_status", function(name, old_val, new_val) {
         if (new_val === "stopped") {
-            document.getElementById('f-start-auto').innerText = "🚀 开始自动抓取";
+            document.getElementById('f-start-auto').innerText = t('startBtn');
             document.getElementById('f-start-auto').style.background = "#2b82d9";
         }
     });
@@ -210,62 +268,85 @@
     panel.id = "psn-footprint-panel";
     panel.style = 'display:none; position:absolute; top:40px; right:0; width:480px; max-height:85vh; background:#353c48; border-radius:3px; z-index:10000; flex-direction:column; box-shadow:0 8px 24px rgba(0,0,0,0.6); border: 1px solid #2d333b; cursor:default; color:#9ba7b6; text-align:left; line-height:normal;';
 
-
     // =========================================================================
     // [核心警告] 绝对不要删除窗口运行/新标签页的一切解释和tooltip！
     // =========================================================================
     panel.innerHTML = `
         <div style="padding:15px; background:#2d333b; border-bottom:1px solid #23282e; border-radius:3px 3px 0 0; display:flex; justify-content:space-between; align-items:center;">
             <div style="display:flex; align-items:center; gap:10px; font-size:12px;">
-                <span style="color:#fff; font-weight:bold;">最大抓取(页):</span>
+                <span style="color:#fff; font-weight:bold;" data-i18n="maxPages">最大抓取(页):</span>
                 <input type="number" id="max-p-input" value="30" style="width:50px; padding:4px; border:1px solid #1e2228; background:#1e2228; color:#fff; border-radius:3px; outline:none;">
             </div>
-            <span id="v-status" style="font-size:11px; color:#6b7989;">就绪</span>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span id="v-status" style="font-size:11px; color:#6b7989;" data-i18n="ready">就绪</span>
+                <button id="lang-toggle" style="background:transparent; border:1px solid #6b7989; color:#9ba7b6; border-radius:3px; cursor:pointer; font-size:10px; padding:2px 6px; font-weight:bold; transition:0.2s;" onmouseover="this.style.color='#fff';this.style.borderColor='#fff';" onmouseout="this.style.color='#9ba7b6';this.style.borderColor='#6b7989';">EN</button>
+            </div>
         </div>
 
         <div style="padding:15px; border-bottom:1px solid #2d333b;">
             <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; background:#292f36; padding:10px; border-radius:4px; border:1px solid #23282e;">
-                <strong style="color:#a0b1c4;">💡 防休眠策略：</strong>
+                <strong style="color:#a0b1c4;" data-i18n="antiSleep">💡 防休眠策略：</strong>
 
                 <label style="cursor:pointer; color:#e2e8f0; display:flex; align-items:center; gap:5px;">
-                    <input type="radio" name="open-mode" value="popup" checked> 独立迷你窗口运行
-                    <span title="抓取时新窗口会自动弹出。您可以将其移至屏幕边缘，但请绝对不要关闭它，否则抓取会立刻中断！" style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;">(弹窗可移开，请勿关闭) ℹ️</span>
+                    <input type="radio" name="open-mode" value="popup" checked>
+                    <span data-i18n="popupMode">独立迷你窗口运行</span>
+                    <span data-i18n-title="popupTipTitle" title="抓取时新窗口会自动弹出..." style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;" data-i18n="popupTip">(弹窗可移开，请勿关闭) ℹ️</span>
                 </label>
 
                 <label style="cursor:pointer; color:#6b7989; display:flex; align-items:center; gap:5px;">
-                    <input type="radio" name="open-mode" value="tab"> 传统新标签页打开
-                    <span title="由于现代浏览器的内存节省和后台休眠机制，非当前焦点标签页的请求会被挂起。如果您发现抓取进度卡住，请手动点击进入该百度标签页以唤醒脚本。" style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;">(受休眠限制，卡住需手动唤醒) ℹ️</span>
+                    <input type="radio" name="open-mode" value="tab">
+                    <span data-i18n="tabMode">传统新标签页打开</span>
+                    <span data-i18n-title="tabTipTitle" title="由于现代浏览器的内存节省和后台休眠机制..." style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;" data-i18n="tabTip">(受休眠限制，卡住需手动唤醒) ℹ️</span>
                 </label>
-                </div>
+            </div>
 
             <div style="margin-top:12px; font-size:12px;">
-                <label style="cursor:pointer; color:#9ba7b6; display:flex; align-items:center; gap:5px;"><input type="checkbox" id="auto-close-check" checked> 抓取后自动关闭百度</label>
+                <label style="cursor:pointer; color:#9ba7b6; display:flex; align-items:center; gap:5px;"><input type="checkbox" id="auto-close-check" checked> <span data-i18n="autoClose">抓取后自动关闭百度</span></label>
             </div>
 
             <div style="font-size:11px; color:#8b949e; margin-top:8px; background:#23282e; padding:6px; border-radius:4px; border:1px solid #1e2228; line-height:1.4;">
-                <strong style="color:#d29922;">ℹ️ 注意：</strong>抓取结果取决于百度引擎实际收录量，未必包含全部历史足迹。
+                <strong style="color:#d29922;" data-i18n="noteHeader">ℹ️ 注意：</strong><span data-i18n="noteBody">抓取结果取决于百度引擎实际收录量，未必包含全部历史足迹。</span>
             </div>
 
             <div style="margin-top:10px;">
-                <input type="text" id="search-input" placeholder="🔍 实时过滤结果..." style="width:100%; padding:8px 10px; border:1px solid #1e2228; background:#1e2228; color:#fff; border-radius:4px; box-sizing:border-box; font-size:13px; outline:none;">
+                <input type="text" id="search-input" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 实时过滤结果..." style="width:100%; padding:8px 10px; border:1px solid #1e2228; background:#1e2228; color:#fff; border-radius:4px; box-sizing:border-box; font-size:13px; outline:none;">
             </div>
 
             <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:10px; font-size:12px; user-select:none;">
-                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="社区讨论" checked>💬 社区讨论</label>
-                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="奖杯Tip" checked>🏆 奖杯Tip</label>
-                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="测评评分" checked>📝 测评评分</label>
-                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="其他参与" checked>👻 其他参与</label>
-                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="排行榜" checked>📊 排行榜</label>
+                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="社区讨论" checked><span data-i18n="cat1">💬 社区讨论</span></label>
+                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="奖杯Tip" checked><span data-i18n="cat2">🏆 奖杯Tip</span></label>
+                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="测评评分" checked><span data-i18n="cat3">📝 测评评分</span></label>
+                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="其他参与" checked><span data-i18n="cat4">👻 其他参与</span></label>
+                <label style="cursor:pointer; display:flex; align-items:center; gap:3px;"><input type="checkbox" class="cat-filter" value="排行榜" checked><span data-i18n="cat5">📊 排行榜</span></label>
             </div>
         </div>
 
         <div id="p-list" style="overflow-y:auto; flex-grow:1; padding:15px; background:#353c48; min-height:180px;"></div>
 
         <div style="padding:15px; background:#2d333b; border-top:1px solid #23282e; display:grid; grid-template-columns: 1fr; gap:10px; border-radius:0 0 3px 3px;">
-            <button id="f-start-auto" style="padding:10px; background:#2b82d9; color:white; border:none; cursor:pointer; font-weight:bold; font-size:13px; border-radius:4px;">🚀 开始自动抓取</button>
-            <button id="f-stop" style="padding:8px; background:transparent; color:#e53935; border:1px solid #e53935; cursor:pointer; font-weight:bold; border-radius:4px; font-size:12px;">强制停止</button>
+            <button id="f-start-auto" style="padding:10px; background:#2b82d9; color:white; border:none; cursor:pointer; font-weight:bold; font-size:13px; border-radius:4px;" data-i18n="startBtn">🚀 开始自动抓取</button>
+            <button id="f-stop" style="padding:8px; background:transparent; color:#e53935; border:1px solid #e53935; cursor:pointer; font-weight:bold; border-radius:4px; font-size:12px;" data-i18n="stopBtn">强制停止</button>
         </div>
     `;
+
+    // 动态应用语言的函数
+    const applyLang = () => {
+        document.querySelectorAll('[data-i18n]').forEach(el => { el.innerHTML = t(el.getAttribute('data-i18n')); });
+        document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.getAttribute('data-i18n-placeholder')); });
+        const navTextSpan = document.getElementById('nav-btn-text');
+        if (navTextSpan) navTextSpan.innerText = t('navBtn');
+        const toggleBtn = document.getElementById('lang-toggle');
+        if (toggleBtn) toggleBtn.innerText = currentLang === 'zh' ? 'EN' : '中';
+
+        const isRunning = GM_getValue("psn_tracker_status") === "running";
+        const startBtn = document.getElementById('f-start-auto');
+        if (startBtn) startBtn.innerText = isRunning ? t('runningBtn') : t('startBtn');
+        const statusEl = document.getElementById('v-status');
+        if (statusEl) {
+            statusEl.innerText = masterResults.length > 0 ? t('loaded', {num: masterResults.length}) : t('ready');
+        }
+    };
 
     // ==========================================
     // 3. 原生导航栏注入与 Hover/Click 锁定逻辑
@@ -283,7 +364,7 @@
 
             const a = document.createElement('a');
             a.href = "javascript:void(0)";
-            a.innerHTML = `足迹 <span id="lock-icon" style="font-size:10px; opacity:0.5; transition:0.2s;">▾</span>`;
+            a.innerHTML = `<span id="nav-btn-text">${t('navBtn')}</span> <span id="lock-icon" style="font-size:10px; opacity:0.5; transition:0.2s;">▾</span>`;
 
             li.appendChild(a);
             li.appendChild(panel);
@@ -321,7 +402,21 @@
             });
         }
     };
+    // 必须确保先执行 DOM 注入！
     injectNavButton();
+
+    // ==========================================
+    // 核心修复：DOM 注入后，再绑定事件和应用语言
+    // ==========================================
+    document.getElementById('lang-toggle').addEventListener('click', (e) => {
+        e.stopPropagation();
+        currentLang = currentLang === 'zh' ? 'en' : 'zh';
+        GM_setValue("psn_lang", currentLang);
+        applyLang();
+        render();
+    });
+
+    applyLang();
 
     // ==========================================
     // 4. 渲染引擎
@@ -329,11 +424,11 @@
     document.querySelectorAll('.cat-filter').forEach(cb => cb.addEventListener('change', render));
 
     const badgeConfig = {
-        '社区讨论': { text: '💬 社区讨论', color: '#64b5f6', bg: 'rgba(100, 181, 246, 0.15)' },
-        '奖杯Tip': { text: '🏆 奖杯Tip', color: '#ffb74d', bg: 'rgba(255, 183, 77, 0.15)' },
-        '测评评分': { text: '📝 测评评分', color: '#81c784', bg: 'rgba(129, 199, 132, 0.15)' },
-        '排行榜': { text: '📊 排行榜', color: '#ba68c8', bg: 'rgba(186, 104, 200, 0.15)' },
-        '其他参与': { text: '👻 其他参与', color: '#90a4ae', bg: 'rgba(144, 164, 174, 0.15)' }
+        '社区讨论': { textKey: 'cat1', color: '#64b5f6', bg: 'rgba(100, 181, 246, 0.15)' },
+        '奖杯Tip': { textKey: 'cat2', color: '#ffb74d', bg: 'rgba(255, 183, 77, 0.15)' },
+        '测评评分': { textKey: 'cat3', color: '#81c784', bg: 'rgba(129, 199, 132, 0.15)' },
+        '排行榜': { textKey: 'cat4', color: '#ba68c8', bg: 'rgba(186, 104, 200, 0.15)' },
+        '其他参与': { textKey: 'cat5', color: '#90a4ae', bg: 'rgba(144, 164, 174, 0.15)' }
     };
 
     function render() {
@@ -360,7 +455,7 @@
             }
 
             const badge = badgeConfig[r.category] || badgeConfig['社区讨论'];
-            const badgeHtml = `<span style="background:${badge.bg}; color:${badge.color}; padding:2px 5px; border-radius:4px; font-size:11px; margin-right:6px; font-weight:normal; white-space:nowrap; flex-shrink:0;">${badge.text}</span>`;
+            const badgeHtml = `<span style="background:${badge.bg}; color:${badge.color}; padding:2px 5px; border-radius:4px; font-size:11px; margin-right:6px; font-weight:normal; white-space:nowrap; flex-shrink:0;">${t(badge.textKey)}</span>`;
 
             return `
             <div style="margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #2d333b;">
@@ -373,7 +468,10 @@
             `;
         }).join('');
 
-        document.getElementById('v-status').innerText = `已载入: ${masterResults.length} 条`;
+        const statusEl = document.getElementById('v-status');
+        if (statusEl) {
+            statusEl.innerText = masterResults.length > 0 ? t('loaded', {num: masterResults.length}) : t('ready');
+        }
     }
 
     document.getElementById('search-input').addEventListener('input', render);
@@ -384,18 +482,16 @@
         GM_setValue("psn_debug_mode", !autoClose);
         const openMode = document.querySelector('input[name="open-mode"]:checked').value;
         const wd = encodeURIComponent(`site:psnine.com "${userId}"`);
-        
-        // 💡 核心修复 Issue 2: 在生成的 URL 中强行挂载 &autopilot=true，让百度页无视 GM_setValue 延迟
         let url = `https://www.baidu.com/s?wd=${wd}&pn=${pn}&oq=${wd}&ie=utf-8&fenlei=256&rsv_idx=1`;
         if (isAutoStart) {
-            url += "&autopilot=true"; 
+            url += "&autopilot=true";
         }
 
         if (isAutoStart) {
             GM_setValue("psn_max_pages", parseInt(document.getElementById('max-p-input').value) || 30);
             GM_setValue("psn_tracker_status", "running");
             GM_setValue("psn_seen_hashes", "[]");
-            document.getElementById('f-start-auto').innerText = "自动抓取中...";
+            document.getElementById('f-start-auto').innerText = t('runningBtn');
             document.getElementById('f-start-auto').style.background = "#586069";
         } else {
             GM_setValue("psn_tracker_status", "stopped");
@@ -404,7 +500,7 @@
         if (openMode === 'popup') {
             const popup = window.open(url, 'BaiduTrackerPopup', 'width=600,height=600,left=50,top=50,resizable=yes,scrollbars=yes');
             if (!popup || popup.closed) {
-                alert("⚠️ 独立窗口被浏览器拦截！请允许弹窗，或改用新标签页模式。");
+                alert("⚠️ 独立窗口被浏览器拦截！请允许弹窗，或改用新标签页模式。\n⚠️ Popup blocked! Allow popups or use background tab mode.");
                 GM_setValue("psn_tracker_status", "stopped");
             }
         } else {
