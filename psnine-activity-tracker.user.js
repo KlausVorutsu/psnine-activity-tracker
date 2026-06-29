@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         PSNINE Activity Tracker (via Baidu) - AutoPilot
 // @namespace    http://tampermonkey.net/
-// @version      2.17.1-AutoPilot
-// @description  修复 DOM 加载顺序导致的 null 报错，实现双语无缝切换，并保持所有底线逻辑
+// @version      2.17.3-AutoPilot
+// @description  修复分类徽章 i18n 错位问题；引入 DOM 结构封杀与 PSNINE 域名白名单，彻底根除“大家还在搜”等百度热搜新闻的污染
 // @author       KlausVorutsu
 // @match        https://www.psnine.com/psnid/*
 // @match        https://www.baidu.com/s?*
 // @connect      baidu.com
-// @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAMFBMVEVHcEw0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNuEOyNSAAAAD3RSTlMAQMAQ4PCApCBQcDBg0JD74B98AAABN0lEQVRIx+2WQRaDIAxECSACWLn/bdsCIkNQ2XXT2bTyHEx+glGIv4STU3KNRccp6dNh4qTM4VDLrGVRxbLGaa3ZQSVQulVJl5JFlh3cLdNyk/xe2IXz4DqYLhZ4mWtHd4/SLY/QQwKmWmGcmUfHb4O1mu8BIPGw4Hg1TEvySQGWoBcItgxndmsbhtJd6baukIKnt525W4anygNECVc1UD8uVbRNbumZNl6UmkagHeRJfX0BdM5NXgA+ZKESpiJ9tRFftZEvue2cS6cKOrGk/IOLTLUcaXuZHrZDq3FB2IonOBCHIy8Bs1Zzo1MxVH+m8fQ+nFeCQM3MWwEsWsy8e8Di7meA5Bb5MDYCt4SnUbP3lv1xOuWuOi3j5kJ5tPiZKahbi54anNRaaG7YElFKQBHR/9PjN3oD6fkt9WKF9rgAAAAASUVORK5CYII=
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
@@ -98,7 +97,8 @@
         const targetId = match ? match[1] : "";
 
         const extractDetailedData = (currentPN, isBlank) => {
-            const containers = document.querySelectorAll('.c-container, .result, [class*="result-op"], .result-op');
+            // 💡 仅限左侧核心区域
+            const containers = document.querySelectorAll('#content_left .c-container, #content_left .result');
             let results = [];
             let rawSummary = [];
 
@@ -119,7 +119,13 @@
                     const rawTitle = a ? a.innerText.trim() : "";
                     const fullText = (el.innerText || "").replace(/\s+/g, ' ');
                     const url = a ? a.href : "";
-                    const isAds = rawTitle === "" || rawTitle.includes("") || url.includes("top.baidu.com") || fullText.includes("百度信誉");
+
+                    // 💡 黑名单: 封杀底部推荐模板和相关特征词 (撤销容易导致误杀的文本强白名单)
+                    const tplAttr = el.getAttribute("tpl");
+                    const isRecommendList = tplAttr === "recommend_list" || fullText.includes("大家还在搜") || fullText.includes("百度热搜");
+
+                    // 彻底移除了 !isFromPSN，把精准度交还给 site:psnine.com 自身的搜索能力和 structural blacklist
+                    const isAds = rawTitle === "" || rawTitle.includes("") || url.includes("top.baidu.com") || fullText.includes("百度信誉") || isRecommendList;
 
                     let preview = "";
                     let statusLabel = "";
@@ -206,7 +212,7 @@
             const currentPN = currentParams.get('pn') || "0";
 
             if (currentPN !== lastProcessedPN) {
-                const containers = document.querySelectorAll('.c-container, .result');
+                const containers = document.querySelectorAll('#content_left .c-container, #content_left .result');
                 const bodyText = document.body.innerText || "";
                 const isBlank = bodyText.includes('未找到相关结果') || bodyText.includes('抱歉，没有找到');
 
@@ -330,7 +336,6 @@
         </div>
     `;
 
-    // 动态应用语言的函数
     const applyLang = () => {
         document.querySelectorAll('[data-i18n]').forEach(el => { el.innerHTML = t(el.getAttribute('data-i18n')); });
         document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.getAttribute('data-i18n-title')); });
@@ -403,12 +408,8 @@
             });
         }
     };
-    // 必须确保先执行 DOM 注入！
     injectNavButton();
 
-    // ==========================================
-    // 核心修复：DOM 注入后，再绑定事件和应用语言
-    // ==========================================
     document.getElementById('lang-toggle').addEventListener('click', (e) => {
         e.stopPropagation();
         currentLang = currentLang === 'zh' ? 'en' : 'zh';
@@ -424,12 +425,13 @@
     // ==========================================
     document.querySelectorAll('.cat-filter').forEach(cb => cb.addEventListener('change', render));
 
+    // 💡 修复分类 i18n 文本对应的 textKey 错位问题
     const badgeConfig = {
         '社区讨论': { textKey: 'cat1', color: '#64b5f6', bg: 'rgba(100, 181, 246, 0.15)' },
         '奖杯Tip': { textKey: 'cat2', color: '#ffb74d', bg: 'rgba(255, 183, 77, 0.15)' },
         '测评评分': { textKey: 'cat3', color: '#81c784', bg: 'rgba(129, 199, 132, 0.15)' },
-        '排行榜': { textKey: 'cat4', color: '#ba68c8', bg: 'rgba(186, 104, 200, 0.15)' },
-        '其他参与': { textKey: 'cat5', color: '#90a4ae', bg: 'rgba(144, 164, 174, 0.15)' }
+        '其他参与': { textKey: 'cat4', color: '#90a4ae', bg: 'rgba(144, 164, 174, 0.15)' },
+        '排行榜': { textKey: 'cat5', color: '#ba68c8', bg: 'rgba(186, 104, 200, 0.15)' }
     };
 
     function render() {
