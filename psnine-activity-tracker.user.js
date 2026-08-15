@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         PSNINE Activity Tracker (via Baidu) - AutoPilot
 // @namespace    http://tampermonkey.net/
-// @version      2.17.3-AutoPilot
-// @description  修复分类徽章 i18n 错位问题；引入 DOM 结构封杀与 PSNINE 域名白名单，彻底根除“大家还在搜”等百度热搜新闻的污染
+// @version      2.17.4-AutoPilot
+// @description  Remove obsolete background tab mode and simplify options
 // @author       KlausVorutsu
 // @match        https://www.psnine.com/psnid/*
+// @match        https://psnine.com/psnid/*
 // @match        https://www.baidu.com/s?*
 // @connect      baidu.com
 // @icon         data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAMAAAAp4XiDAAAAMFBMVEVHcEw0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNs0mNuEOyNSAAAAD3RSTlMAQMAQ4PCApCBQcDBg0JD74B98AAABN0lEQVRIx+2WQRaDIAxECSACWLn/bdsCIkNQ2XXT2bTyHEx+glGIv4STU3KNRccp6dNh4qTM4VDLrGVRxbLGaa3ZQSVQulVJl5JFlh3cLdNyk/xe2IXz4DqYLhZ4mWtHd4/SLY/QQwKmWmGcmUfHb4O1mu8BIPGw4Hg1TEvySQGWoBcItgxndmsbhtJd6baukIKnt525W4anygNECVc1UD8uVbRNbumZNl6UmkagHeRJfX0BdM5NXgA+ZKESpiJ9tRFftZEvue2cS6cKOrGk/IOLTLUcaXuZHrZDq3FB2IonOBCHIy8Bs1Zzo1MxVH+m8fQ+nFeCQM3MWwEsWsy8e8Di7meA5Bb5MDYCt4SnUbP3lv1xOuWuOi3j5kJ5tPiZKahbi54anNRaaG7YElFKQBHR/9PjN3oD6fkt9WKF9rgAAAAASUVORK5CYII=
@@ -292,20 +293,12 @@
         </div>
 
         <div style="padding:15px; border-bottom:1px solid #2d333b;">
-            <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; background:#292f36; padding:10px; border-radius:4px; border:1px solid #23282e;">
-                <strong style="color:#a0b1c4;" data-i18n="antiSleep">💡 防休眠策略：</strong>
-
-                <label style="cursor:pointer; color:#e2e8f0; display:flex; align-items:center; gap:5px;">
-                    <input type="radio" name="open-mode" value="popup" checked>
+            <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; background:#292f36; padding:10px; border-radius:4px; border:1px solid #23282e; color:#e2e8f0;">
+                <div style="display:flex; align-items:center; gap:5px;">
+                    <span style="color:#a0b1c4;">💡 运行模式：</span>
                     <span data-i18n="popupMode">独立迷你窗口运行</span>
-                    <span data-i18n-title="popupTipTitle" title="抓取时新窗口会自动弹出..." style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;" data-i18n="popupTip">(弹窗可移开，请勿关闭) ℹ️</span>
-                </label>
-
-                <label style="cursor:pointer; color:#6b7989; display:flex; align-items:center; gap:5px;">
-                    <input type="radio" name="open-mode" value="tab">
-                    <span data-i18n="tabMode">传统新标签页打开</span>
-                    <span data-i18n-title="tabTipTitle" title="由于现代浏览器的内存节省和后台休眠机制..." style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;" data-i18n="tabTip">(受休眠限制，卡住需手动唤醒) ℹ️</span>
-                </label>
+                    <span data-i18n-title="popupTipTitle" title="抓取时新窗口会自动弹出。您可以将其移至屏幕边缘，但请绝对不要关闭它，否则抓取会立刻中断！" style="font-size:11px; color:#8b949e; font-weight:normal; cursor:help; border-bottom:1px dotted #8b949e; margin-left:2px;" data-i18n="popupTip">(弹窗可移开，请勿关闭) ℹ️</span>
+                </div>
             </div>
 
             <div style="margin-top:12px; font-size:12px;">
@@ -484,7 +477,7 @@
         manualPN = parseInt(pn);
         const autoClose = document.getElementById('auto-close-check').checked;
         GM_setValue("psn_debug_mode", !autoClose);
-        const openMode = document.querySelector('input[name="open-mode"]:checked').value;
+        // 移除读取 openMode，彻底废弃后台标签页模式
         const wd = encodeURIComponent(`site:psnine.com "${userId}"`);
         let url = `https://www.baidu.com/s?wd=${wd}&pn=${pn}&oq=${wd}&ie=utf-8&fenlei=256&rsv_idx=1`;
         if (isAutoStart) {
@@ -501,14 +494,11 @@
             GM_setValue("psn_tracker_status", "stopped");
         }
 
-        if (openMode === 'popup') {
-            const popup = window.open(url, 'BaiduTrackerPopup', 'width=600,height=600,left=50,top=50,resizable=yes,scrollbars=yes');
-            if (!popup || popup.closed) {
-                alert("⚠️ 独立窗口被浏览器拦截！请允许弹窗，或改用新标签页模式。\n⚠️ Popup blocked! Allow popups or use background tab mode.");
-                GM_setValue("psn_tracker_status", "stopped");
-            }
-        } else {
-            GM_openInTab(url, { active: false, insert: true });
+        // 强制使用稳定弹窗模式
+        const popup = window.open(url, 'BaiduTrackerPopup', 'width=600,height=600,left=50,top=50,resizable=yes,scrollbars=yes');
+        if (!popup || popup.closed) {
+            alert("⚠️ 独立窗口被浏览器拦截！请允许当前网站弹出窗口。\n⚠️ Popup blocked! Please allow popups for this site.");
+            GM_setValue("psn_tracker_status", "stopped");
         }
     };
 
