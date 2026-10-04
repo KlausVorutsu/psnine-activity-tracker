@@ -348,34 +348,38 @@
         }
     };
 
-    // ==========================================
-    // 3. 原生导航栏注入与 Hover/Click 锁定逻辑
+// ==========================================
+    // 3. 原生导航栏注入与 Hover/Click 锁定逻辑 (兼容新老UI)
     // ==========================================
     let isPanelLocked = false;
     let hoverTimeout = null;
 
     const injectNavButton = () => {
-        const pcMenu = document.getElementById('pcmenu');
-        if (pcMenu && !document.getElementById('nav-psn-footprint-li')) {
-            const li = document.createElement('li');
-            li.className = "dropdown";
-            li.id = "nav-psn-footprint-li";
-            li.style.position = "relative";
+        // 💡 核心修复：同时寻找新版的 .nav-menu 和老版的 #pcmenu
+        const navMenu = document.querySelector('.nav-menu') || document.getElementById('pcmenu');
+
+        if (navMenu && !document.getElementById('nav-psn-footprint-wrapper')) {
+            // 新版导航不再使用 ul>li，改用一个通用的 div 包裹器
+            const wrapper = document.createElement('div');
+            wrapper.id = "nav-psn-footprint-wrapper";
+            wrapper.style.position = "relative";
+            wrapper.style.display = "inline-flex"; // 完美融入新版 flex 布局
+            wrapper.style.alignItems = "center";
 
             const a = document.createElement('a');
             a.href = "javascript:void(0)";
-            a.innerHTML = `<span id="nav-btn-text">${t('navBtn')}</span> <span id="lock-icon" style="font-size:10px; opacity:0.5; transition:0.2s;">▾</span>`;
+            a.innerHTML = `${t('navBtn')} ▾`;
 
-            li.appendChild(a);
-            li.appendChild(panel);
-            pcMenu.appendChild(li);
+            wrapper.appendChild(a);
+            wrapper.appendChild(panel);
+            navMenu.appendChild(wrapper);
 
-            li.addEventListener('mouseenter', () => {
+            wrapper.addEventListener('mouseenter', () => {
                 clearTimeout(hoverTimeout);
                 if (!isPanelLocked) panel.style.display = 'flex';
             });
 
-            li.addEventListener('mouseleave', () => {
+            wrapper.addEventListener('mouseleave', () => {
                 if (!isPanelLocked) {
                     hoverTimeout = setTimeout(() => { panel.style.display = 'none'; }, 200);
                 }
@@ -393,7 +397,7 @@
             panel.addEventListener('click', (e) => e.stopPropagation());
 
             document.addEventListener('click', (e) => {
-                if (isPanelLocked && !li.contains(e.target)) {
+                if (isPanelLocked && !wrapper.contains(e.target)) {
                     isPanelLocked = false;
                     panel.style.display = 'none';
                     document.getElementById('lock-icon').innerText = '▾';
